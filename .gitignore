@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+config/.storage/
+config/.cloud/
+config/deps/
+config/tts/
+config/*.db*
+config/*.log*
+config/.HA_VERSION
+config/home-assistant.log*

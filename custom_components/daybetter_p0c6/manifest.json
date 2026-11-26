@@ -1,0 +1,12 @@
+{
+  "domain": "daybetter_p0c6",
+  "name": "DayBetter P0C6 Tap Lamp",
+  "codeowners": ["@pcartwright81"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/pcartwright81/daybetter_p0c6",
+  "iot_class": "cloud_push",
+  "issue_tracker": "https://github.com/pcartwright81/daybetter_p0c6/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

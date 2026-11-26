@@ -1,0 +1,8 @@
+http:
+frontend:
+config:
+
+logger:
+  default: info
+  logs:
+    custom_components.daybetter_p0c6: debug

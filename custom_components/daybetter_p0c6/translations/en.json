@@ -1,0 +1,69 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to DayBetter",
+        "description": "Choose how to authenticate with your DayBetter account.",
+        "menu_options": {
+          "email_otp": "Sign in with Email + OTP code",
+          "token": "Paste existing userToken"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate DayBetter",
+        "description": "Your DayBetter session token has expired. Choose how to sign in again.",
+        "menu_options": {
+          "email_otp": "Sign in with Email + OTP code",
+          "token": "Paste existing userToken"
+        }
+      },
+      "token": {
+        "title": "DayBetter Token",
+        "description": "Enter the DayBetter app userToken.",
+        "data": {
+          "token": "User token"
+        }
+      },
+      "email_otp": {
+        "title": "DayBetter Email Login",
+        "description": "Enter your DayBetter account email address to receive a 6-digit verification code.",
+        "data": {
+          "email": "Email address"
+        }
+      },
+      "verify_otp": {
+        "title": "Verify Email Code",
+        "description": "Enter the 6-digit verification code sent to {email}.",
+        "data": {
+          "otp_code": "Verification code"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Unable to reach the DayBetter cloud API.",
+      "invalid_auth": "Invalid authentication credentials or expired token.",
+      "otp_request_failed": "Could not send verification code to that email address.",
+      "unknown": "Unexpected error occurred."
+    },
+    "abort": {
+      "already_configured": "This DayBetter account is already configured.",
+      "reauth_successful": "Re-authentication was successful."
+    }
+  },
+  "services": {
+    "send_raw_command": {
+      "name": "Send raw hex command",
+      "description": "Send a raw hex command frame to a DayBetter lamp over the cloud WebSocket.",
+      "fields": {
+        "entity_id": {
+          "name": "Entity",
+          "description": "Target DayBetter light entity (or entities)."
+        },
+        "hex_data": {
+          "name": "Hex data",
+          "description": "Hexadecimal command frame to send (e.g. A0100401E0E1)."
+        }
+      }
+    }
+  }
+}

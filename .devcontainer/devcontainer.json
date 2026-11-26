@@ -1,0 +1,39 @@
+{
+  "name": "DayBetter P0C6 Home Assistant Integration",
+  "image": "mcr.microsoft.com/devcontainers/python:3.14",
+  "features": {
+    "ghcr.io/devcontainers-extra/features/uv:1": {}
+  },
+  "forwardPorts": [8123],
+  "portsAttributes": {
+    "8123": {
+      "label": "Home Assistant",
+      "onAutoForward": "notify"
+    }
+  },
+  "postCreateCommand": "mkdir -p /home/vscode/.local/bin && uv venv --seed /home/vscode/.venv && uv pip install --python /home/vscode/.venv/bin/python pytest pytest-asyncio aiohttp voluptuous ruff homeassistant home-assistant-frontend mutagen ha-ffmpeg numpy rf-protocols infrared-protocols aiohasupervisor radios PyTurboJPEG pymicro-vad pyspeex-noise && uv pip install --python /home/vscode/.venv/bin/python $(/home/vscode/.venv/bin/python -c \"import json, pathlib, homeassistant; print(' '.join(json.loads((pathlib.Path(homeassistant.__file__).parent / 'components/conversation/manifest.json').read_text())['requirements']))\")",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.debugpy",
+        "charliermarsh.ruff",
+        "redhat.vscode-yaml",
+        "esbenp.prettier-vscode"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/home/vscode/.venv/bin/python",
+        "python.testing.pytestEnabled": true,
+        "python.testing.pytestArgs": ["tests"],
+        "editor.formatOnSave": true,
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff",
+          "editor.codeActionsOnSave": {
+            "source.fixAll.ruff": "explicit",
+            "source.organizeImports.ruff": "explicit"
+          }
+        }
+      }
+    }
+  }
+}

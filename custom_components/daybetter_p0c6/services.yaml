@@ -1,0 +1,20 @@
+send_raw_command:
+  name: Send raw hex command
+  description: Send a raw hex command frame to a DayBetter lamp over the cloud WebSocket.
+  fields:
+    entity_id:
+      name: Entity
+      description: Target DayBetter light entity or entities.
+      required: true
+      selector:
+        entity:
+          integration: daybetter_p0c6
+          domain: light
+          multiple: true
+    hex_data:
+      name: Hex data
+      description: Hexadecimal command frame (including CRC-16/Modbus suffix).
+      required: true
+      example: "A0100401E0E1"
+      selector:
+        text:
