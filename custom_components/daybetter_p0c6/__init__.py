@@ -20,7 +20,7 @@ from .coordinator import DayBetterDataUpdateCoordinator
 
 type DayBetterConfigEntry = ConfigEntry[DayBetterDataUpdateCoordinator]
 
-PLATFORMS: list[Platform] = [Platform.LIGHT]
+PLATFORMS: list[Platform] = [Platform.LIGHT, Platform.SELECT, Platform.NUMBER]
 
 SERVICE_SEND_RAW_COMMAND_SCHEMA = vol.Schema(
     {

@@ -31,6 +31,46 @@ _LOGGER = logging.getLogger(__name__)
 
 _REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=15)
 _AUTH_ERROR_CODES = frozenset({401, 403, 1001, 1002, 1003, 1004, 10001, 10002})
+_MODEL_CLASS_NAMES: dict[int, str] = {
+    4: "Landscapes",
+    5: "Life",
+    6: "Festival",
+    7: "Moods",
+    8: "Classic",
+    11: "Static",
+}
+
+
+@dataclass(slots=True)
+class EffectCatalog:
+    """Categorized and sorted effect presets for a device PID."""
+
+    by_category: dict[str, dict[str, str]]
+    flat: dict[str, str]
+
+    @classmethod
+    def from_categories(cls, raw: dict[str, dict[str, str]]) -> EffectCatalog:
+        """Build a sorted EffectCatalog from {category: {name: HEX}}."""
+        sorted_categories: dict[str, dict[str, str]] = {}
+        flat: dict[str, str] = {}
+        for category in sorted(raw):
+            items = raw[category]
+            if not items:
+                continue
+            sorted_items = dict(sorted(items.items(), key=lambda kv: kv[0].lower()))
+            sorted_categories[category] = sorted_items
+            for name, order in sorted_items.items():
+                flat[f"{category}: {name}"] = order
+        return cls(by_category=sorted_categories, flat=flat)
+
+    @property
+    def categories(self) -> list[str]:
+        """Return sorted category names."""
+        return list(self.by_category)
+
+    def effects_in_category(self, category: str) -> list[str]:
+        """Return sorted scene names for a category."""
+        return list(self.by_category.get(category, ()))
 
 
 class DayBetterError(Exception):
@@ -70,6 +110,8 @@ class DayBetterDevice:
     rgb_color: tuple[int, int, int] | None = None
     brightness: int | None = None
     effect: str | None = None
+    effect_category: str | None = None
+    effect_speed: int = 50
     last_ack: str | None = None
 
     @classmethod
@@ -123,7 +165,7 @@ def verify_crc16(frame: bytes) -> bool:
     return frame[-2:] == expected
 
 
-def ensure_crc16(hex_command: str) -> str:
+def ensure_crc16(hex_command: str, speed: int = 50) -> str:
     """Ensure a hex command frame has expected payload length and CRC-16/Modbus."""
     cleaned = hex_command.strip().replace(" ", "").upper()
     raw = bytes.fromhex(cleaned)
@@ -133,7 +175,8 @@ def ensure_crc16(hex_command: str) -> str:
             return cleaned
         if len(raw) < expected_len:
             missing = expected_len - len(raw)
-            pad = bytes([0x32] + [0x00] * (missing - 1))
+            speed_byte = max(1, min(100, speed))
+            pad = bytes([speed_byte] + [0x00] * (missing - 1))
             raw = raw + pad
         return append_crc16(raw).hex().upper()
     if len(raw) >= 3 and verify_crc16(raw):
@@ -387,7 +430,7 @@ class DayBetterApiClient:
     async def async_get_rhythm_effects(
         self, device_pid: str = DEFAULT_PID
     ) -> dict[str, str]:
-        """Fetch phone and device rhythm presets mapped as {name: HEX_COMMAND}."""
+        """Fetch on-device microphone rhythm presets mapped as {name: HEX_COMMAND}."""
         data = await self._post(
             ENDPOINT_GET_RHYTHM_MODEL,
             json_body={
@@ -400,25 +443,17 @@ class DayBetterApiClient:
         effects: dict[str, str] = {}
         if not isinstance(data, dict):
             return effects
-        for list_key, prefix in (
-            ("deviceList", "Rhythm"),
-            ("phoneList", "Phone Rhythm"),
-        ):
-            for item in data.get(list_key) or []:
-                if not isinstance(item, dict):
-                    continue
-                raw_name = item.get("rhythmName")
-                if not raw_name:
-                    continue
-                name = f"{prefix}: {str(raw_name).strip()}"
-                _add_effect(effects, name, item.get("rhythmOrder"))
+        for item in data.get("deviceList") or []:
+            if not isinstance(item, dict):
+                continue
+            _add_effect(effects, item.get("rhythmName"), item.get("rhythmOrder"))
         return effects
 
-    async def async_get_all_effects(
+    async def async_get_effect_catalog(
         self, device_pid: str = DEFAULT_PID
-    ) -> dict[str, str]:
-        """Aggregate all classic, edition, and rhythm presets for a device PID."""
-        effects: dict[str, str] = {}
+    ) -> EffectCatalog:
+        """Fetch categorized, sorted scene and on-device rhythm presets."""
+        by_category: dict[str, dict[str, str]] = {}
 
         try:
             classes = await self.async_get_model_classes(device_pid)
@@ -431,36 +466,58 @@ class DayBetterApiClient:
             if class_id is None:
                 continue
             try:
-                edition = await self.async_get_edition_scenes(int(class_id), device_pid)
+                numeric_id = int(class_id)
+                edition = await self.async_get_edition_scenes(numeric_id, device_pid)
             except (DayBetterError, ValueError) as err:
                 _LOGGER.debug(
                     "Failed to load edition scenes for class %s: %s", class_id, err
                 )
                 continue
+            if not edition:
+                continue
+            cat_name = str(
+                model_class.get("modelClassName")
+                or _MODEL_CLASS_NAMES.get(numeric_id)
+                or f"Scene {numeric_id}"
+            ).strip()
+            bucket = by_category.setdefault(cat_name, {})
             for name, order in edition.items():
-                effects.setdefault(name, order)
+                bucket.setdefault(name, order)
 
         try:
             classics = await self.async_get_classic_scenes(device_pid)
-            for name, order in classics.items():
-                effects.setdefault(name, order)
+            if classics:
+                bucket = by_category.setdefault("Classic", {})
+                for name, order in classics.items():
+                    bucket.setdefault(name, order)
         except DayBetterError as err:
             _LOGGER.debug("Failed to load classic scenes for %s: %s", device_pid, err)
 
         try:
             rhythms = await self.async_get_rhythm_effects(device_pid)
-            for name, order in rhythms.items():
-                effects.setdefault(name, order)
+            if rhythms:
+                bucket = by_category.setdefault("Rhythm", {})
+                for name, order in rhythms.items():
+                    bucket.setdefault(name, order)
         except DayBetterError as err:
             _LOGGER.debug("Failed to load rhythm effects for %s: %s", device_pid, err)
 
+        catalog = EffectCatalog.from_categories(by_category)
         _LOGGER.debug(
-            "Loaded %d effects for PID %s (sample: %s)",
-            len(effects),
+            "Loaded %d effects across %d categories for PID %s (%s)",
+            len(catalog.flat),
+            len(catalog.by_category),
             device_pid,
-            list(effects.items())[:5],
+            catalog.categories,
         )
-        return effects
+        return catalog
+
+    async def async_get_all_effects(
+        self, device_pid: str = DEFAULT_PID
+    ) -> dict[str, str]:
+        """Return flat category-prefixed {name: HEX_COMMAND} map for a device PID."""
+        catalog = await self.async_get_effect_catalog(device_pid)
+        return catalog.flat
 
 
 _HEX_CHARS = frozenset("0123456789ABCDEF")

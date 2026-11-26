@@ -23,9 +23,12 @@ def _install_ha_stubs() -> None:
     const = types.ModuleType("homeassistant.const")
     const.ATTR_ENTITY_ID = "entity_id"
     const.EVENT_HOMEASSISTANT_STOP = "homeassistant_stop"
+    const.PERCENTAGE = "%"
 
     class Platform(str):
         LIGHT = "light"
+        SELECT = "select"
+        NUMBER = "number"
 
     const.Platform = Platform
     sys.modules["homeassistant.const"] = const
@@ -175,6 +178,26 @@ def _install_ha_stubs() -> None:
     light.LightEntityFeature = LightEntityFeature
     light.LightEntity = LightEntity
     sys.modules["homeassistant.components.light"] = light
+
+    select_mod = types.ModuleType("homeassistant.components.select")
+
+    class SelectEntity:
+        pass
+
+    select_mod.SelectEntity = SelectEntity
+    sys.modules["homeassistant.components.select"] = select_mod
+
+    number_mod = types.ModuleType("homeassistant.components.number")
+
+    class NumberMode(str):
+        SLIDER = "slider"
+
+    class NumberEntity:
+        pass
+
+    number_mod.NumberMode = NumberMode
+    number_mod.NumberEntity = NumberEntity
+    sys.modules["homeassistant.components.number"] = number_mod
 
 
 _install_ha_stubs()

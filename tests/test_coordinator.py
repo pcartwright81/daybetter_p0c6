@@ -8,7 +8,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 import pytest
 
-from custom_components.daybetter_p0c6.api import DayBetterDevice
+from custom_components.daybetter_p0c6.api import DayBetterDevice, EffectCatalog
 from custom_components.daybetter_p0c6.coordinator import DayBetterDataUpdateCoordinator
 
 
@@ -48,9 +48,15 @@ class _FakeApi:
             )
         ]
 
-    async def async_get_all_effects(self, device_pid: str) -> dict[str, str]:
+    async def async_get_effect_catalog(self, device_pid: str) -> EffectCatalog:
         self.effects_calls += 1
-        return {"Christmas": "A009042270FF", "Pleasure": "A0090428F0F8"}
+        return EffectCatalog.from_categories(
+            {
+                "Classic": {"Flow": "A009082A070200"},
+                "Festival": {"Christmas": "A009042270FF"},
+                "Moods": {"Pleasure": "A0090428F0F8"},
+            }
+        )
 
     async def async_set_power(self, device_id: int, is_on: bool) -> None:
         self.power_calls.append((device_id, is_on))
@@ -136,12 +142,21 @@ async def test_ws_command_dispatch_rgb_effect_and_raw() -> None:
     assert coordinator.data[100002].is_on is True
     assert coordinator.data[100002].rgb_color == (0x66, 0x66, 0xFF)
 
-    await coordinator.async_set_effect(100002, "Christmas")
+    await coordinator.async_set_effect(100002, "Festival: Christmas")
     assert ws.sent_json[1]["data"] == "A009042270FF"
-    assert coordinator.data[100002].effect == "Christmas"
+    assert coordinator.data[100002].effect == "Festival: Christmas"
+    assert coordinator.data[100002].effect_category == "Festival"
+
+    await coordinator.async_set_effect_category(100002, "Classic")
+    await coordinator.async_set_category_effect(100002, "Flow")
+    assert ws.sent_json[2]["data"].startswith("A009082A07020032")
+
+    await coordinator.async_set_effect_speed(100002, 80)
+    assert coordinator.data[100002].effect_speed == 80
+    assert ws.sent_json[3]["data"].startswith("A009082A07020050")
 
     await coordinator.async_send_raw_command(100002, "a0 10 04 01 e0 e1")
-    assert ws.sent_json[2]["data"] == "A0100401E0E1"
+    assert ws.sent_json[4]["data"] == "A0100401E0E1"
 
     with pytest.raises(HomeAssistantError):
         await coordinator.async_send_raw_command(100002, "NOT_HEX")

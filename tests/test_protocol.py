@@ -64,3 +64,7 @@ def test_ensure_crc16_preserves_complete_and_pads_classic_templates() -> None:
     assert len(raw) == 10
     assert raw[:8] == bytes.fromhex("A009082A07020032")
     assert verify_crc16(raw) is True
+
+    fast = bytes.fromhex(ensure_crc16("A009082A070200", speed=80))
+    assert fast[:8] == bytes.fromhex("A009082A07020050")
+    assert verify_crc16(fast) is True

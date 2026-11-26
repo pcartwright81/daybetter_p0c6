@@ -50,6 +50,21 @@
       "reauth_successful": "Re-authentication was successful."
     }
   },
+  "entity": {
+    "select": {
+      "effect_category": {
+        "name": "Effect category"
+      },
+      "effect": {
+        "name": "Effect"
+      }
+    },
+    "number": {
+      "effect_speed": {
+        "name": "Effect speed"
+      }
+    }
+  },
   "services": {
     "send_raw_command": {
       "name": "Send raw hex command",

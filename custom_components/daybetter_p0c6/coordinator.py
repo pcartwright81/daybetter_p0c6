@@ -18,6 +18,7 @@ from .api import (
     DayBetterAuthError,
     DayBetterDevice,
     DayBetterError,
+    EffectCatalog,
     build_rgb_command,
     ensure_crc16,
     verify_crc16,
@@ -81,7 +82,7 @@ class DayBetterDataUpdateCoordinator(DataUpdateCoordinator[dict[int, DayBetterDe
         self.api = api
         self._session = session
         self.user_group = user_group
-        self.effects_by_pid: dict[str, dict[str, str]] = {}
+        self.effects_by_pid: dict[str, EffectCatalog] = {}
         self._topic_to_device_id: dict[str, int] = {}
         self._subscribed_topics: set[str] = set()
         self._ws: aiohttp.ClientWebSocketResponse | None = None
@@ -110,18 +111,24 @@ class DayBetterDataUpdateCoordinator(DataUpdateCoordinator[dict[int, DayBetterDe
                 device.rgb_color = old.rgb_color
                 device.brightness = old.brightness
                 device.effect = old.effect
+                device.effect_category = old.effect_category
+                device.effect_speed = old.effect_speed
                 device.last_ack = old.last_ack
+
+            if device.mold_pid not in self.effects_by_pid:
+                self.effects_by_pid[
+                    device.mold_pid
+                ] = await self.api.async_get_effect_catalog(device.mold_pid)
+
+            catalog = self.effects_by_pid[device.mold_pid]
+            if device.effect_category is None and catalog.categories:
+                device.effect_category = catalog.categories[0]
 
             result[device.device_id] = device
             if device.topic:
                 self._topic_to_device_id[device.topic] = device.device_id
                 if device.topic not in self._subscribed_topics:
                     new_topics.append(device.topic)
-
-            if device.mold_pid not in self.effects_by_pid:
-                self.effects_by_pid[
-                    device.mold_pid
-                ] = await self.api.async_get_all_effects(device.mold_pid)
 
         if self._ws is not None and not self._ws.closed and new_topics:
             for topic in new_topics:
@@ -130,9 +137,13 @@ class DayBetterDataUpdateCoordinator(DataUpdateCoordinator[dict[int, DayBetterDe
 
         return result
 
+    def get_effect_catalog(self, mold_pid: str) -> EffectCatalog:
+        """Return cached EffectCatalog for a device PID."""
+        return self.effects_by_pid.get(mold_pid, EffectCatalog({}, {}))
+
     def get_effects_for_pid(self, mold_pid: str) -> dict[str, str]:
-        """Return cached {effect_name: HEX_COMMAND} map for a device PID."""
-        return self.effects_by_pid.get(mold_pid, {})
+        """Return cached flat {Category: Name -> HEX_COMMAND} map for a device PID."""
+        return self.get_effect_catalog(mold_pid).flat
 
     def async_start_websocket(self) -> None:
         """Start the resilient background WebSocket listener task."""
@@ -352,6 +363,8 @@ class DayBetterDataUpdateCoordinator(DataUpdateCoordinator[dict[int, DayBetterDe
         device.is_on = raw[3] == 1
         bri_pct = max(0, min(100, raw[6]))
         device.brightness = round(bri_pct * 255 / 100)
+        if 1 <= raw[7] <= 100:
+            device.effect_speed = raw[7]
         device.rgb_color = (raw[11], raw[12], raw[13])
 
     async def async_set_power(self, device_id: int, is_on: bool) -> None:
@@ -402,21 +415,77 @@ class DayBetterDataUpdateCoordinator(DataUpdateCoordinator[dict[int, DayBetterDe
     async def async_set_effect(self, device_id: int, effect: str) -> None:
         """Activate a scene or rhythm effect preset over WebSocket."""
         device = self._require_device(device_id)
-        effects = self.get_effects_for_pid(device.mold_pid)
-        raw_cmd = effects.get(effect)
+        catalog = self.get_effect_catalog(device.mold_pid)
+        raw_cmd = catalog.flat.get(effect)
+        resolved_name = effect
+        resolved_category: str | None = None
+
+        if raw_cmd is not None and ": " in effect:
+            resolved_category = effect.split(": ", 1)[0]
+        elif raw_cmd is None:
+            for category, items in catalog.by_category.items():
+                if effect in items:
+                    raw_cmd = items[effect]
+                    resolved_category = category
+                    resolved_name = f"{category}: {effect}"
+                    break
+
         if not raw_cmd:
             raise HomeAssistantError(
                 f"Unknown effect '{effect}' for device {device.name}"
             )
         try:
-            hex_cmd = ensure_crc16(raw_cmd)
+            hex_cmd = ensure_crc16(raw_cmd, speed=device.effect_speed)
         except ValueError as err:
             raise HomeAssistantError(
                 f"Effect '{effect}' does not have a valid hex command"
             ) from err
         await self.async_send_ws_command(device.topic, hex_cmd)
         device.is_on = True
-        device.effect = effect
+        device.effect = resolved_name
+        if resolved_category is not None:
+            device.effect_category = resolved_category
+        if self.data:
+            self.async_set_updated_data(dict(self.data))
+
+    async def async_set_effect_category(self, device_id: int, category: str) -> None:
+        """Select the active effect category for filtering the effect select entity."""
+        device = self._require_device(device_id)
+        catalog = self.get_effect_catalog(device.mold_pid)
+        if category not in catalog.by_category:
+            raise HomeAssistantError(
+                f"Unknown effect category '{category}' for device {device.name}"
+            )
+        device.effect_category = category
+        if self.data:
+            self.async_set_updated_data(dict(self.data))
+
+    async def async_set_category_effect(self, device_id: int, scene_name: str) -> None:
+        """Activate a scene by name within the device's selected category."""
+        device = self._require_device(device_id)
+        catalog = self.get_effect_catalog(device.mold_pid)
+        category = device.effect_category or (
+            catalog.categories[0] if catalog.categories else None
+        )
+        if category and scene_name in catalog.by_category.get(category, {}):
+            await self.async_set_effect(device_id, f"{category}: {scene_name}")
+            return
+        await self.async_set_effect(device_id, scene_name)
+
+    async def async_set_effect_speed(self, device_id: int, speed: int) -> None:
+        """Set animation speed (1-100%) and re-apply if a template effect is active."""
+        device = self._require_device(device_id)
+        clamped = max(1, min(100, int(speed)))
+        device.effect_speed = clamped
+
+        if device.effect:
+            raw_cmd = self.get_effects_for_pid(device.mold_pid).get(device.effect)
+            if raw_cmd:
+                raw = bytes.fromhex(raw_cmd)
+                if len(raw) >= 3 and raw[0] == 0xA0 and len(raw) < raw[2]:
+                    hex_cmd = ensure_crc16(raw_cmd, speed=clamped)
+                    await self.async_send_ws_command(device.topic, hex_cmd)
+
         if self.data:
             self.async_set_updated_data(dict(self.data))
 

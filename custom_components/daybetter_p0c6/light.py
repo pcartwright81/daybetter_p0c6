@@ -11,15 +11,12 @@ from homeassistant.components.light import (
     LightEntityFeature,
 )
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import DayBetterConfigEntry
-from .api import DayBetterDevice
 from .const import DOMAIN
 from .coordinator import DayBetterDataUpdateCoordinator
+from .entity import DayBetterEntity
 
 
 async def async_setup_entry(
@@ -34,12 +31,9 @@ async def async_setup_entry(
     )
 
 
-class DayBetterLightEntity(
-    CoordinatorEntity[DayBetterDataUpdateCoordinator], LightEntity
-):
+class DayBetterLightEntity(DayBetterEntity, LightEntity):
     """Representation of a DayBetter P0C6 Wi-Fi Tap Lamp."""
 
-    _attr_has_entity_name = True
     _attr_name = None
     _attr_color_mode = ColorMode.RGB
     _attr_supported_color_modes: ClassVar[set[ColorMode]] = {ColorMode.RGB}
@@ -49,35 +43,8 @@ class DayBetterLightEntity(
         coordinator: DayBetterDataUpdateCoordinator,
         device_id: int,
     ) -> None:
-        super().__init__(coordinator)
-        self._device_id = device_id
+        super().__init__(coordinator, device_id)
         self._attr_unique_id = f"{DOMAIN}_{device_id}"
-
-    @property
-    def _device(self) -> DayBetterDevice:
-        return self.coordinator.data[self._device_id]
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        device = self._device
-        connections: set[tuple[str, str]] = set()
-        if device.wlan_mac:
-            connections.add((dr.CONNECTION_NETWORK_MAC, device.wlan_mac))
-        return DeviceInfo(
-            identifiers={(DOMAIN, str(device.device_id))},
-            connections=connections,
-            name=device.name,
-            manufacturer="DayBetter",
-            model=device.mold_pid,
-        )
-
-    @property
-    def available(self) -> bool:
-        return (
-            super().available
-            and self._device_id in self.coordinator.data
-            and self._device.online
-        )
 
     @property
     def is_on(self) -> bool:

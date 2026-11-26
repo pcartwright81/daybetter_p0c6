@@ -260,12 +260,17 @@ async def test_get_all_effects_aggregates_classics_editions_and_rhythms() -> Non
     effects = await client.async_get_all_effects("P0C6")
 
     assert effects == {
-        "Warm Fade": "A009082A070200",
-        "Christmas": "A009042270FF",
-        "Pleasure": "A0090428F0F8",
+        "Classic: Warm Fade": "A009082A070200",
+        "Festival: Christmas": "A009042270FF",
+        "Moods: Pleasure": "A0090428F0F8",
         "Rhythm: Spectrum": "A00904311122",
-        "Phone Rhythm: Pulse": "A00904323344",
     }
+    assert list(effects) == [
+        "Classic: Warm Fade",
+        "Festival: Christmas",
+        "Moods: Pleasure",
+        "Rhythm: Spectrum",
+    ]
 
 
 async def test_auth_errors_raise_daybetter_auth_error() -> None:
